@@ -5,7 +5,47 @@ import { streamProse, runLogicQC } from "@/lib/ai/gemini-client";
 import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check } from "lucide-react";
 import { useStoryStore, Chapter } from "@/lib/store/useStoryStore";
 
-const MOCK_LORE_CONTEXT = `[LORE JEMBATAN SEPERTI SEBELUMNYA...]`;
+const MOCK_LORE_CONTEXT = `
+=== COSMOLOGY & WORLD-BUILDING ===
+1. The Truth: Dunia fisik tidak ada. Semuanya adalah mimpi kolektif dari entitas bernama "The Dreamer". Semua manusia adalah kepingan jiwa The Dreamer.
+2. Reality by Consensus: Hukum fisika bekerja karena miliaran manusia (Sleepers) mempercayainya. Kepercayaan kolektif menciptakan realitas (termasuk Dewa).
+3. Reality Correction: Jika orang biasa melihat sihir/monster, dunia secara otomatis akan mencoba "mengedit" ingatan mereka untuk menjaga agar mimpi tetap stabil.
+4. Realms: 
+   - Consensus Layer: Dunia nyata yang stabil.
+   - The Veil: Dimensi cermin bayangan, sepi, penuh kabut dan monster (Shadeborn).
+   - Echoes: Pocket dimension/Ujian dari sebuah Fragment (contoh: Jembatan Kabut, Isle of Calystria).
+   - The Gazebo: Tempat kumpul rahasia di dalam mimpi (manifestasi Will Fragment).
+
+=== POWER SYSTEM (LUCIDITY & RESONANCE) ===
+- Progression: Sleeper (0%) -> Seeker -> Dreamer -> Fragment-Bound -> Awakened (100%).
+- The Cost (Resonance Loss & Melting): Sihir tidak pakai Mana. Kekuatan dibayar dengan kewarasan. Jika seseorang terlalu memaksakan kehendaknya pada realitas, atau bertindak berlawanan dengan sifat aslinya, tubuh dan kesadarannya akan "Meluruh" (Melting/Dissolving) menjadi transparan dan kembali ke The Dreamer.
+- Loot: Saat Shadeborn mati, kesadaran/traumanya berpindah ke pembunuh (meningkatkan Resonance) atau meninggalkan "Echo Shards".
+
+=== CHARACTER PROFILES (PSYCHOLOGY & POWERS) ===
+1. JULIAN VANCE
+- Resonance: The Anomalous Hunter / Reality Anchor (Level: Seeker/Dreamer). Kekuatannya misterius, berfungsi secara pasif men-dispel sihir orang lain saat dia terancam. Punya insting bertahan hidup ekstrem.
+- Sifat: Pragmatis, logis, blak-blakan/kasar (blunt), penyendiri. Digeser dari balas dendam menjadi pelindung kelompok.
+
+2. ELARA MOONSONG
+- Resonance: Warden of Memories (Bisa memanipulasi dan menghapus ingatan, termasuk ingatannya sendiri).
+- Sifat: Sangat tertutup (secretive), paranoid, pesimis. Murid dari The Hermit yang secara diam-diam ingin membunuh gurunya.
+
+3. SEBASTIAN
+- Resonance: Eternal Wanderer (Bisa menjelajah alam non-fisik/mimpi, kebal suhu ekstrem).
+- Sifat: Kalkulatif, sangat menghindari risiko, bicaranya sarkas dan pelit kata. Yatim piatu Gereja Halora yang sinis. Sering mengucap "blasphemous" sebagai sindiran. Takut pada proses "Melting".
+
+4. LYRA SOLVARIS
+- Resonance: Voicewoven Herald (Mind Weaver - Telepati).
+- Sifat: Putri kerajaan yang naif, kaku, dan polos. Bisu secara fisik (HANYA bisa bicara lewat telepati langsung ke otak orang lain). Terlindungi dari dunia luar tapi pelan-pelan terpapar pikiran gelap orang lain.
+
+5. KAEL STERLING
+- Resonance: Swordborne Vessel (Form Shaper - Bisa menciptakan pedang dari objek).
+- Sifat: Ksatria idealis, optimis, loyal pada The Chancellor (Empire). Percaya dia sedang "menyelamatkan dunia" sampai akhirnya melihat kebusukan atasannya.
+
+=== ENEMIES & ENTITIES ===
+- Shadeborn: Monster perwujudan trauma/mimpi buruk The Dreamer.
+- The 5 Great Powers: The Queen (Authority), The Pope (Faith), The Chancellor (Mind), The Hermit (Isolation), The Prime/Faction Leader (Ego - musuh utama Julian).
+`;
 
 export default function DraftEditor() {
   // State Editor

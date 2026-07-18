@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { streamProse, runLogicQC } from "@/lib/ai/gemini-client";
-import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check } from "lucide-react";
+import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2 } from "lucide-react";
 import { useStoryStore, Chapter } from "@/lib/store/useStoryStore";
 
 const MOCK_LORE_CONTEXT = `
@@ -50,7 +50,7 @@ const MOCK_LORE_CONTEXT = `
 export default function DraftEditor() {
   // State Editor
   const [chapterId, setChapterId] = useState<string>(crypto.randomUUID());
-  const [title, setTitle] = useState("Chapter 1: The Silent Abyss");
+  const [title, setTitle] = useState("Chapter 1: The Glitch");
   const [draft, setDraft] = useState("");
   const [prose, setProse] = useState("");
   
@@ -69,30 +69,42 @@ export default function DraftEditor() {
   useEffect(() => setMounted(true), []);
 
   // --- Helper Functions ---
-  
-  // 1. Fungsi Penghitung Jumlah Kata
   const getWordCount = (text: string) => {
     return text.trim().split(/\s+/).filter((word) => word.length > 0).length;
   };
 
-  // 2. Fungsi Copy to Clipboard
   const handleCopy = async () => {
     if (!prose) return;
     await navigator.clipboard.writeText(prose);
     setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000); // Reset tulisan 'Copied' setelah 2 detik
+    setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  const handleClearProse = () => {
+    if (confirm("Yakin ingin menghapus semua hasil teks AI di panel kanan?")) {
+      setProse("");
+    }
   };
 
   const handleForge = async () => {
     if (!draft.trim()) return;
     setIsForging(true);
-    setProse(""); 
     setQcResult(null);
 
-    await streamProse(draft, MOCK_LORE_CONTEXT, (chunk) => {
+    // Jika sudah ada teks di panel kanan, beri jarak 2 baris (paragraf baru)
+    if (prose.trim()) {
+      setProse((prev) => prev.trim() + "\n\n");
+    }
+
+    // Panggil AI dan kirimkan 'prose' (teks kanan) sebagai memori masa lalu
+    await streamProse(draft, MOCK_LORE_CONTEXT, prose, (chunk) => {
       setProse((prev) => prev + chunk);
     });
+    
     setIsForging(false);
+    
+    // Otomatis kosongkan draf kiri setelah sukses agar siap untuk input BEAT selanjutnya
+    setDraft(""); 
   };
 
   const handleLoreQC = async () => {
@@ -107,13 +119,12 @@ export default function DraftEditor() {
     const newChapter: Chapter = {
       id: chapterId,
       title: title || "Untitled Chapter",
-      draftContent: draft,
+      draftContent: draft, 
       proseContent: prose,
       updatedAt: Date.now(),
     };
     saveChapter(newChapter);
-    // Kita kasih efek UI dikit biar kerasa udah ke-save
-    alert(`Bab "${title}" berhasil disimpan ke Database!`);
+    alert(`Bab "${title}" berhasil disimpan ke Database Lokal!`);
   };
 
   const loadChapter = (chapter: Chapter) => {
@@ -165,7 +176,7 @@ export default function DraftEditor() {
 
           <button onClick={handleForge} disabled={isForging || !draft} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-black transition-all rounded-md bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
             {isForging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Forge Prose
+            Forge Beat
           </button>
         </div>
       </header>
@@ -173,7 +184,7 @@ export default function DraftEditor() {
       {/* BANNER QC */}
       {qcResult && (
         <div className={`px-6 py-3 text-sm font-medium border-b ${qcResult.includes("LORE ACCURATE") ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" : "bg-amber-950/50 text-amber-400 border-amber-900"}`}>
-          <span className="font-bold">Lorekeeper Agent: </span>
+          <span className="font-bold">Lorekeeper: </span>
           {qcResult}
         </div>
       )}
@@ -215,13 +226,13 @@ export default function DraftEditor() {
         {/* PANEL KIRI: The Beat Editor */}
         <div className={`flex flex-col flex-1 border-r border-zinc-800 bg-zinc-950 transition-all ${showSidebar ? 'ml-64' : 'ml-0'}`}>
           <div className="px-6 py-2 text-xs font-semibold tracking-wider uppercase border-b border-zinc-800 text-zinc-500 flex justify-between items-center bg-zinc-900/30">
-            <span>Director's Rough Draft</span>
+            <span>Director's Draft (Next Beat)</span>
             <span className="bg-zinc-900 px-2 py-1 rounded text-zinc-400">{getWordCount(draft)} words</span>
           </div>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Tulis ide kasarmu di sini (campur Indo/Inggris)..."
+            placeholder="Tulis Beat-mu di sini... (Setelah di-Forge, kotak ini akan kosong otomatis untuk Beat selanjutnya)"
             className="flex-1 w-full p-6 text-lg leading-relaxed bg-transparent resize-none focus:outline-none text-zinc-300 placeholder:text-zinc-700"
           />
         </div>
@@ -229,14 +240,23 @@ export default function DraftEditor() {
         {/* PANEL KANAN: The Proscenium */}
         <div className="flex flex-col flex-1 bg-zinc-900/30">
           <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
-            <span>Forged English Prose (Editable)</span>
+            <span>Forged Prose (Bersambung ke bawah)</span>
             <div className="flex items-center gap-4">
               <span className="text-emerald-600 font-mono">{getWordCount(prose)} words</span>
+              
+              <button 
+                onClick={handleClearProse}
+                disabled={!prose}
+                className="flex items-center gap-1.5 px-3 py-1 text-red-400 hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                title="Hapus semua teks"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+
               <button 
                 onClick={handleCopy}
                 disabled={!prose}
-                className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Copy to Clipboard"
+                className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-50"
               >
                 {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                 <span className={isCopied ? "text-emerald-500" : ""}>{isCopied ? "Copied!" : "Copy"}</span>
@@ -246,7 +266,7 @@ export default function DraftEditor() {
           <textarea
             value={prose}
             onChange={(e) => setProse(e.target.value)}
-            placeholder="Hasil AI akan muncul di sini. Kamu bisa langsung mengedit teks ini sesuka hatimu sebelum di-save."
+            placeholder="Hasil AI akan bersambung ke bawah. Kamu bisa memodifikasinya kapan saja..."
             className="flex-1 w-full p-6 text-lg leading-relaxed bg-transparent resize-none focus:outline-none text-zinc-100 placeholder:text-zinc-700 selection:bg-emerald-500/30"
           />
         </div>

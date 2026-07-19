@@ -56,31 +56,24 @@ type DBChapter = {
 };
 
 export default function DraftEditor() {
-  // State Editor
   const [chapterId, setChapterId] = useState<string>(crypto.randomUUID());
   const [title, setTitle] = useState("Chapter 1: The Glitch");
   const [draft, setDraft] = useState("");
   const [prose, setProse] = useState("");
   
-  // State Database & Loading
   const [chapters, setChapters] = useState<DBChapter[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingDB, setIsLoadingDB] = useState(true);
   const [showSidebar, setShowSidebar] = useState(false);
 
-  // State AI & Utils
   const [isForging, setIsForging] = useState(false);
   const [isCheckingQC, setIsCheckingQC] = useState(false);
   const [qcResult, setQcResult] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
-  // Reference untuk Textarea Kanan (agar bisa mendeteksi teks yang di-blok untuk Italic/Bold)
   const proseRef = useRef<HTMLTextAreaElement>(null);
-
-  // Fix Hydration Issue (Zustand Persist Next.js)
   const [mounted, setMounted] = useState(false);
 
-  // Fetch data dari Supabase saat web pertama kali dibuka
   const loadDatabase = async () => {
     setIsLoadingDB(true);
     const data = await getChaptersDB();
@@ -93,14 +86,25 @@ export default function DraftEditor() {
     loadDatabase();
   }, []);
 
-  // --- Helper Functions ---
+  // --- HELPER FUNCTIONS ---
+  
+  // Fungsi Cerdas: Membasmi "Enter" berlebih (Lebih dari 2 kali enter akan diubah jadi 2 kali saja)
+  const cleanNewLines = (text: string) => {
+    if (!text) return "";
+    return text
+      .replace(/\r\n/g, '\n') // Standardisasi format enter windows ke umum
+      .replace(/\n{3,}/g, '\n\n') // Jika ada 3 Enter atau lebih, jadikan 2 Enter (1 baris kosong)
+      .trim(); // Hapus enter berlebih di awal dan akhir bab
+  };
+
   const getWordCount = (text: string) => {
     return text.trim().split(/\s+/).filter((word) => word.length > 0).length;
   };
 
   const handleCopy = async () => {
     if (!prose) return;
-    await navigator.clipboard.writeText(prose);
+    const cleanedProse = cleanNewLines(prose); // Rapikan sebelum di copy
+    await navigator.clipboard.writeText(cleanedProse);
     setIsCopied(true);
     setTimeout(() => setIsCopied(false), 2000);
   };
@@ -119,7 +123,6 @@ export default function DraftEditor() {
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     
-    // Jangan lakukan apa-apa kalau tidak ada teks yang di-blok
     if (start === end) return;
 
     const selectedText = prose.substring(start, end);
@@ -131,15 +134,14 @@ export default function DraftEditor() {
 
     if (formatType === 'italic') {
       wrappedText = `*${selectedText}*`;
-      cursorOffset = 1; // Geser kursor 1 karakter karena tambah bintang (*)
+      cursorOffset = 1; 
     } else if (formatType === 'bold') {
       wrappedText = `**${selectedText}**`;
-      cursorOffset = 2; // Geser kursor 2 karakter karena tambah bintang dua (**)
+      cursorOffset = 2; 
     }
 
     setProse(before + wrappedText + after);
 
-    // Kembalikan fokus kursor ke teks yang di-blok tadi agar flow edit tetap jalan
     setTimeout(() => {
       textarea.focus();
       textarea.setSelectionRange(start + cursorOffset, end + cursorOffset);
@@ -152,19 +154,15 @@ export default function DraftEditor() {
     setIsForging(true);
     setQcResult(null);
 
-    // Jika sudah ada teks di panel kanan, beri jarak 2 baris (paragraf baru) sebelum menyambung
     if (prose.trim()) {
       setProse((prev) => prev.trim() + "\n\n");
     }
 
-    // Panggil AI dan kirimkan 'prose' (teks kanan) sebagai memori masa lalu
     await streamProse(draft, MOCK_LORE_CONTEXT, prose, (chunk) => {
       setProse((prev) => prev + chunk);
     });
     
     setIsForging(false);
-    
-    // Otomatis kosongkan draf kiri setelah sukses agar siap untuk input BEAT selanjutnya
     setDraft(""); 
   };
 
@@ -179,16 +177,21 @@ export default function DraftEditor() {
   // --- Database Functions ---
   const handleSaveToDB = async () => {
     setIsSaving(true);
+    
+    // Auto-Format: Rapikan teks sebelum masuk database agar tidak ada enter bolong-bolong
+    const cleanedProse = cleanNewLines(prose);
+    setProse(cleanedProse); // Update teks di layar agar rapi seketika
+
     const response = await saveChapterDB({
       id: chapterId,
       title: title || "Untitled Chapter",
       draftContent: draft, 
-      proseContent: prose,
+      proseContent: cleanedProse,
     });
     
     if (response.success) {
       alert(`Bab "${title}" berhasil disimpan ke Cloud Database! ☁️`);
-      await loadDatabase(); // Refresh daftar sidebar
+      await loadDatabase(); 
     } else {
       alert("Gagal menyimpan bab. Cek koneksi internet.");
     }
@@ -199,7 +202,11 @@ export default function DraftEditor() {
     setChapterId(chapter.id);
     setTitle(chapter.title);
     setDraft(chapter.draftContent);
-    setProse(chapter.proseContent);
+    
+    // Auto-Format: Rapikan teks saat ditarik dari database untuk berjaga-jaga
+    const cleanedProse = cleanNewLines(chapter.proseContent);
+    setProse(cleanedProse);
+    
     setQcResult(null);
   };
 
@@ -212,21 +219,18 @@ export default function DraftEditor() {
   };
 
   const handleDeleteChapter = async (e: React.MouseEvent, id: string, title: string) => {
-    e.stopPropagation(); // Mencegah bab ter-load saat klik tombol hapus
+    e.stopPropagation(); 
     if (confirm(`Yakin ingin menghapus bab "${title}" selamanya dari Database?`)) {
       await deleteChapterDB(id);
       await loadDatabase();
-      // Jika bab yang dihapus sedang dibuka, buat bab kosong baru
       if (chapterId === id) createNewChapter();
     }
   };
 
-  // Mencegah hydration mismatch error
   if (!mounted) return null;
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-zinc-300 font-sans">
-      {/* HEADER / TOOLBAR UTAMA */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/50">
         <div className="flex items-center gap-4">
           <button onClick={() => setShowSidebar(!showSidebar)} className="p-2 border rounded border-zinc-700 hover:bg-zinc-800 transition-colors relative">
@@ -253,12 +257,10 @@ export default function DraftEditor() {
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
             {isSaving ? "Saving..." : "Save Chapter"}
           </button>
-
           <button onClick={handleLoreQC} disabled={isCheckingQC || !draft} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 disabled:opacity-50">
             {isCheckingQC ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4 text-amber-500" />}
             QC Logika
           </button>
-
           <button onClick={handleForge} disabled={isForging || !draft} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-black transition-all rounded-md bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
             {isForging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             Forge Beat
@@ -266,7 +268,6 @@ export default function DraftEditor() {
         </div>
       </header>
 
-      {/* BANNER QC LOREKEEPER */}
       {qcResult && (
         <div className={`px-6 py-3 text-sm font-medium border-b ${qcResult.includes("LORE ACCURATE") ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" : "bg-amber-950/50 text-amber-400 border-amber-900"}`}>
           <span className="font-bold">Lorekeeper: </span>
@@ -274,10 +275,7 @@ export default function DraftEditor() {
         </div>
       )}
 
-      {/* TAMPILAN UTAMA (Split Screen & Sidebar) */}
       <div className="flex flex-1 overflow-hidden relative">
-        
-        {/* SIDEBAR DATABASE CLOUD */}
         {showSidebar && (
           <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col absolute z-10 h-full shadow-2xl transition-all">
             <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/50">
@@ -304,7 +302,6 @@ export default function DraftEditor() {
                       <span>{new Date(ch.updatedAt).toLocaleDateString('id-ID')}</span>
                       <span>{getWordCount(ch.proseContent)} words</span>
                     </div>
-                    {/* Tombol Hapus (Hanya muncul saat di-hover) */}
                     <button 
                       onClick={(e) => handleDeleteChapter(e, ch.id, ch.title)}
                       className="absolute top-2.5 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500 transition-all"
@@ -319,25 +316,22 @@ export default function DraftEditor() {
           </div>
         )}
 
-        {/* PANEL KIRI: Director's Draft */}
         <div className={`flex flex-col flex-1 border-r border-zinc-800 bg-zinc-950 transition-all ${showSidebar ? 'ml-72' : 'ml-0'}`}>
           <div className="px-6 py-2 text-xs font-semibold tracking-wider uppercase border-b border-zinc-800 text-zinc-500 flex justify-between items-center bg-zinc-900/30">
-            <span>Director's Draft (Next Beat)</span>
+            <span>Director's Draft</span>
             <span className="bg-zinc-900 px-2 py-1 rounded text-zinc-400">{getWordCount(draft)} words</span>
           </div>
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Tulis Beat-mu di sini... (Setelah Forge, kotak ini otomatis kosong untuk menyambut beat selanjutnya)"
+            placeholder="Tulis Beat-mu di sini..."
             className="flex-1 w-full p-6 text-lg leading-relaxed bg-transparent resize-none focus:outline-none text-zinc-300 placeholder:text-zinc-700"
           />
         </div>
 
-        {/* PANEL KANAN: Forged Prose (Dengan Toolbar Formatting) */}
         <div className="flex flex-col flex-1 bg-zinc-900/30">
           <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
             
-            {/* TOOLBAR FORMATTING */}
             <div className="flex items-center gap-2">
               <span>Forged Prose</span>
               <div className="h-4 w-px bg-zinc-700 mx-2"></div>
@@ -357,10 +351,8 @@ export default function DraftEditor() {
               </button>
             </div>
 
-            {/* WORD COUNT & COPY/DELETE */}
             <div className="flex items-center gap-4">
               <span className="text-emerald-600 font-mono">{getWordCount(prose)} words</span>
-              
               <button 
                 onClick={handleClearProse}
                 disabled={!prose}
@@ -369,7 +361,6 @@ export default function DraftEditor() {
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
-
               <button 
                 onClick={handleCopy}
                 disabled={!prose}

@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { streamProse, runLogicQC } from "@/lib/ai/gemini-client";
 import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2 } from "lucide-react";
-import { useStoryStore, Chapter } from "@/lib/store/useStoryStore";
+// Import fungsi Database yang baru kita buat
+import { getChaptersDB, saveChapterDB, deleteChapterDB } from "@/app/actions/chapter";
 
 const MOCK_LORE_CONTEXT = `
 === COSMOLOGY & WORLD-BUILDING ===
@@ -47,6 +48,14 @@ const MOCK_LORE_CONTEXT = `
 - The 5 Great Powers: The Queen (Authority), The Pope (Faith), The Chancellor (Mind), The Hermit (Isolation), The Prime/Faction Leader (Ego - musuh utama Julian).
 `;
 
+type DBChapter = {
+  id: string;
+  title: string;
+  draftContent: string;
+  proseContent: string;
+  updatedAt: Date | string;
+};
+
 export default function DraftEditor() {
   // State Editor
   const [chapterId, setChapterId] = useState<string>(crypto.randomUUID());
@@ -54,19 +63,29 @@ export default function DraftEditor() {
   const [draft, setDraft] = useState("");
   const [prose, setProse] = useState("");
   
-  // State Loading & Copy
+  // State Database & Loading
+  const [chapters, setChapters] = useState<DBChapter[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingDB, setIsLoadingDB] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(false);
+
+  // State AI
   const [isForging, setIsForging] = useState(false);
   const [isCheckingQC, setIsCheckingQC] = useState(false);
   const [qcResult, setQcResult] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
 
-  // Database Store
-  const { chapters, saveChapter } = useStoryStore();
-  const [showSidebar, setShowSidebar] = useState(false);
+  // Fetch data dari Supabase saat web pertama kali dibuka
+  const loadDatabase = async () => {
+    setIsLoadingDB(true);
+    const data = await getChaptersDB();
+    setChapters(data);
+    setIsLoadingDB(false);
+  };
 
-  // Fix Hydration Issue (Zustand Persist Next.js)
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    loadDatabase();
+  }, []);
 
   // --- Helper Functions ---
   const getWordCount = (text: string) => {
@@ -86,25 +105,22 @@ export default function DraftEditor() {
     }
   };
 
+  // --- AI Functions ---
   const handleForge = async () => {
     if (!draft.trim()) return;
     setIsForging(true);
     setQcResult(null);
 
-    // Jika sudah ada teks di panel kanan, beri jarak 2 baris (paragraf baru)
     if (prose.trim()) {
       setProse((prev) => prev.trim() + "\n\n");
     }
 
-    // Panggil AI dan kirimkan 'prose' (teks kanan) sebagai memori masa lalu
     await streamProse(draft, MOCK_LORE_CONTEXT, prose, (chunk) => {
       setProse((prev) => prev + chunk);
     });
     
     setIsForging(false);
-    
-    // Otomatis kosongkan draf kiri setelah sukses agar siap untuk input BEAT selanjutnya
-    setDraft(""); 
+    setDraft(""); // Reset kotak kiri siap untuk next beat
   };
 
   const handleLoreQC = async () => {
@@ -115,19 +131,26 @@ export default function DraftEditor() {
     setIsCheckingQC(false);
   };
 
-  const handleSaveToDB = () => {
-    const newChapter: Chapter = {
+  // --- Database Functions ---
+  const handleSaveToDB = async () => {
+    setIsSaving(true);
+    const response = await saveChapterDB({
       id: chapterId,
       title: title || "Untitled Chapter",
       draftContent: draft, 
       proseContent: prose,
-      updatedAt: Date.now(),
-    };
-    saveChapter(newChapter);
-    alert(`Bab "${title}" berhasil disimpan ke Database Lokal!`);
+    });
+    
+    if (response.success) {
+      alert(`Bab "${title}" berhasil disimpan ke Cloud Database! ☁️`);
+      await loadDatabase(); // Refresh daftar sidebar
+    } else {
+      alert("Gagal menyimpan bab. Cek koneksi internet.");
+    }
+    setIsSaving(false);
   };
 
-  const loadChapter = (chapter: Chapter) => {
+  const handleLoadChapter = (chapter: DBChapter) => {
     setChapterId(chapter.id);
     setTitle(chapter.title);
     setDraft(chapter.draftContent);
@@ -143,15 +166,27 @@ export default function DraftEditor() {
     setQcResult(null);
   };
 
-  if (!mounted) return null;
+  const handleDeleteChapter = async (e: React.MouseEvent, id: string, title: string) => {
+    e.stopPropagation(); // Mencegah bab ter-load saat klik tombol hapus
+    if (confirm(`Yakin ingin menghapus bab "${title}" selamanya dari Database?`)) {
+      await deleteChapterDB(id);
+      await loadDatabase();
+      if (chapterId === id) createNewChapter();
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-zinc-300 font-sans">
       {/* HEADER / TOOLBAR */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/50">
         <div className="flex items-center gap-4">
-          <button onClick={() => setShowSidebar(!showSidebar)} className="p-2 border rounded border-zinc-700 hover:bg-zinc-800 transition-colors">
+          <button onClick={() => setShowSidebar(!showSidebar)} className="p-2 border rounded border-zinc-700 hover:bg-zinc-800 transition-colors relative">
             <List className="w-5 h-5 text-zinc-300" />
+            {chapters.length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-emerald-500 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {chapters.length}
+              </span>
+            )}
           </button>
           <div className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-emerald-500" />
@@ -165,8 +200,9 @@ export default function DraftEditor() {
         </div>
         
         <div className="flex gap-3">
-          <button onClick={handleSaveToDB} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 text-emerald-400 hover:text-emerald-300">
-            <Save className="w-4 h-4" /> Save Chapter
+          <button onClick={handleSaveToDB} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 text-emerald-400 hover:text-emerald-300 disabled:opacity-50">
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
+            {isSaving ? "Saving to Cloud..." : "Save Chapter"}
           </button>
 
           <button onClick={handleLoreQC} disabled={isCheckingQC || !draft} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 disabled:opacity-50">
@@ -192,30 +228,41 @@ export default function DraftEditor() {
       {/* TAMPILAN UTAMA (Editor + Sidebar) */}
       <div className="flex flex-1 overflow-hidden relative">
         
-        {/* SIDEBAR DATABASE */}
+        {/* SIDEBAR DATABASE CLOUD */}
         {showSidebar && (
-          <div className="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col absolute z-10 h-full shadow-2xl transition-all">
+          <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col absolute z-10 h-full shadow-2xl transition-all">
             <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/50">
-              <span className="font-bold text-sm text-zinc-400 uppercase tracking-wider">Chapter DB</span>
+              <span className="font-bold text-sm text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                Cloud DB
+                {isLoadingDB && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+              </span>
               <button onClick={createNewChapter} className="p-1 text-emerald-500 hover:bg-zinc-800 rounded transition-colors" title="Buat Bab Baru">
                 <Plus className="w-5 h-5" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-2">
-              {chapters.length === 0 ? (
-                <p className="text-xs text-zinc-600 text-center mt-4">Belum ada bab tersimpan.</p>
+              {chapters.length === 0 && !isLoadingDB ? (
+                <p className="text-xs text-zinc-600 text-center mt-4">Belum ada naskah di Cloud.</p>
               ) : (
                 chapters.map((ch) => (
                   <div 
                     key={ch.id} 
-                    onClick={() => loadChapter(ch)}
-                    className={`p-3 mb-2 rounded cursor-pointer border transition-colors ${chapterId === ch.id ? 'bg-emerald-900/30 border-emerald-500/50 text-emerald-300' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-600 text-zinc-400'}`}
+                    onClick={() => handleLoadChapter(ch)}
+                    className={`p-3 mb-2 rounded cursor-pointer border transition-colors group relative ${chapterId === ch.id ? 'bg-emerald-900/30 border-emerald-500/50 text-emerald-300' : 'bg-zinc-950 border-zinc-800 hover:border-zinc-600 text-zinc-400'}`}
                   >
-                    <div className="font-semibold text-sm truncate">{ch.title}</div>
-                    <div className="text-xs mt-1 opacity-50 flex justify-between">
-                      <span>{new Date(ch.updatedAt).toLocaleDateString()}</span>
+                    <div className="font-semibold text-sm truncate pr-6">{ch.title}</div>
+                    <div className="text-[10px] mt-1.5 opacity-50 flex justify-between font-mono">
+                      <span>{new Date(ch.updatedAt).toLocaleDateString('id-ID')}</span>
                       <span>{getWordCount(ch.proseContent)} words</span>
                     </div>
+                    {/* Tombol Hapus (Hanya muncul saat di-hover) */}
+                    <button 
+                      onClick={(e) => handleDeleteChapter(e, ch.id, ch.title)}
+                      className="absolute top-2.5 right-2 opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-500 transition-all"
+                      title="Hapus Bab"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 ))
               )}
@@ -224,7 +271,7 @@ export default function DraftEditor() {
         )}
 
         {/* PANEL KIRI: The Beat Editor */}
-        <div className={`flex flex-col flex-1 border-r border-zinc-800 bg-zinc-950 transition-all ${showSidebar ? 'ml-64' : 'ml-0'}`}>
+        <div className={`flex flex-col flex-1 border-r border-zinc-800 bg-zinc-950 transition-all ${showSidebar ? 'ml-72' : 'ml-0'}`}>
           <div className="px-6 py-2 text-xs font-semibold tracking-wider uppercase border-b border-zinc-800 text-zinc-500 flex justify-between items-center bg-zinc-900/30">
             <span>Director's Draft (Next Beat)</span>
             <span className="bg-zinc-900 px-2 py-1 rounded text-zinc-400">{getWordCount(draft)} words</span>

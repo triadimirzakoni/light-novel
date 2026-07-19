@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { streamProse, runLogicQC } from "@/lib/ai/gemini-client";
-import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2 } from "lucide-react";
-// Import fungsi Database yang baru kita buat
+import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2, Italic, Bold } from "lucide-react";
 import { getChaptersDB, saveChapterDB, deleteChapterDB } from "@/app/actions/chapter";
 
 const MOCK_LORE_CONTEXT = `
@@ -69,11 +68,17 @@ export default function DraftEditor() {
   const [isLoadingDB, setIsLoadingDB] = useState(true);
   const [showSidebar, setShowSidebar] = useState(false);
 
-  // State AI
+  // State AI & Utils
   const [isForging, setIsForging] = useState(false);
   const [isCheckingQC, setIsCheckingQC] = useState(false);
   const [qcResult, setQcResult] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+
+  // Reference untuk Textarea Kanan (agar bisa mendeteksi teks yang di-blok untuk Italic/Bold)
+  const proseRef = useRef<HTMLTextAreaElement>(null);
+
+  // Fix Hydration Issue (Zustand Persist Next.js)
+  const [mounted, setMounted] = useState(false);
 
   // Fetch data dari Supabase saat web pertama kali dibuka
   const loadDatabase = async () => {
@@ -84,6 +89,7 @@ export default function DraftEditor() {
   };
 
   useEffect(() => {
+    setMounted(true);
     loadDatabase();
   }, []);
 
@@ -105,22 +111,61 @@ export default function DraftEditor() {
     }
   };
 
+  // --- FUNGSI FORMATTING (ITALIC & BOLD) ---
+  const applyFormatting = (formatType: 'italic' | 'bold') => {
+    const textarea = proseRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    
+    // Jangan lakukan apa-apa kalau tidak ada teks yang di-blok
+    if (start === end) return;
+
+    const selectedText = prose.substring(start, end);
+    const before = prose.substring(0, start);
+    const after = prose.substring(end, prose.length);
+
+    let wrappedText = '';
+    let cursorOffset = 0;
+
+    if (formatType === 'italic') {
+      wrappedText = `*${selectedText}*`;
+      cursorOffset = 1; // Geser kursor 1 karakter karena tambah bintang (*)
+    } else if (formatType === 'bold') {
+      wrappedText = `**${selectedText}**`;
+      cursorOffset = 2; // Geser kursor 2 karakter karena tambah bintang dua (**)
+    }
+
+    setProse(before + wrappedText + after);
+
+    // Kembalikan fokus kursor ke teks yang di-blok tadi agar flow edit tetap jalan
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + cursorOffset, end + cursorOffset);
+    }, 0);
+  };
+
   // --- AI Functions ---
   const handleForge = async () => {
     if (!draft.trim()) return;
     setIsForging(true);
     setQcResult(null);
 
+    // Jika sudah ada teks di panel kanan, beri jarak 2 baris (paragraf baru) sebelum menyambung
     if (prose.trim()) {
       setProse((prev) => prev.trim() + "\n\n");
     }
 
+    // Panggil AI dan kirimkan 'prose' (teks kanan) sebagai memori masa lalu
     await streamProse(draft, MOCK_LORE_CONTEXT, prose, (chunk) => {
       setProse((prev) => prev + chunk);
     });
     
     setIsForging(false);
-    setDraft(""); // Reset kotak kiri siap untuk next beat
+    
+    // Otomatis kosongkan draf kiri setelah sukses agar siap untuk input BEAT selanjutnya
+    setDraft(""); 
   };
 
   const handleLoreQC = async () => {
@@ -171,13 +216,17 @@ export default function DraftEditor() {
     if (confirm(`Yakin ingin menghapus bab "${title}" selamanya dari Database?`)) {
       await deleteChapterDB(id);
       await loadDatabase();
+      // Jika bab yang dihapus sedang dibuka, buat bab kosong baru
       if (chapterId === id) createNewChapter();
     }
   };
 
+  // Mencegah hydration mismatch error
+  if (!mounted) return null;
+
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-zinc-300 font-sans">
-      {/* HEADER / TOOLBAR */}
+      {/* HEADER / TOOLBAR UTAMA */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/50">
         <div className="flex items-center gap-4">
           <button onClick={() => setShowSidebar(!showSidebar)} className="p-2 border rounded border-zinc-700 hover:bg-zinc-800 transition-colors relative">
@@ -202,7 +251,7 @@ export default function DraftEditor() {
         <div className="flex gap-3">
           <button onClick={handleSaveToDB} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 text-emerald-400 hover:text-emerald-300 disabled:opacity-50">
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
-            {isSaving ? "Saving to Cloud..." : "Save Chapter"}
+            {isSaving ? "Saving..." : "Save Chapter"}
           </button>
 
           <button onClick={handleLoreQC} disabled={isCheckingQC || !draft} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 disabled:opacity-50">
@@ -217,7 +266,7 @@ export default function DraftEditor() {
         </div>
       </header>
 
-      {/* BANNER QC */}
+      {/* BANNER QC LOREKEEPER */}
       {qcResult && (
         <div className={`px-6 py-3 text-sm font-medium border-b ${qcResult.includes("LORE ACCURATE") ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" : "bg-amber-950/50 text-amber-400 border-amber-900"}`}>
           <span className="font-bold">Lorekeeper: </span>
@@ -225,7 +274,7 @@ export default function DraftEditor() {
         </div>
       )}
 
-      {/* TAMPILAN UTAMA (Editor + Sidebar) */}
+      {/* TAMPILAN UTAMA (Split Screen & Sidebar) */}
       <div className="flex flex-1 overflow-hidden relative">
         
         {/* SIDEBAR DATABASE CLOUD */}
@@ -270,7 +319,7 @@ export default function DraftEditor() {
           </div>
         )}
 
-        {/* PANEL KIRI: The Beat Editor */}
+        {/* PANEL KIRI: Director's Draft */}
         <div className={`flex flex-col flex-1 border-r border-zinc-800 bg-zinc-950 transition-all ${showSidebar ? 'ml-72' : 'ml-0'}`}>
           <div className="px-6 py-2 text-xs font-semibold tracking-wider uppercase border-b border-zinc-800 text-zinc-500 flex justify-between items-center bg-zinc-900/30">
             <span>Director's Draft (Next Beat)</span>
@@ -279,15 +328,36 @@ export default function DraftEditor() {
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Tulis Beat-mu di sini... (Setelah di-Forge, kotak ini akan kosong otomatis untuk Beat selanjutnya)"
+            placeholder="Tulis Beat-mu di sini... (Setelah Forge, kotak ini otomatis kosong untuk menyambut beat selanjutnya)"
             className="flex-1 w-full p-6 text-lg leading-relaxed bg-transparent resize-none focus:outline-none text-zinc-300 placeholder:text-zinc-700"
           />
         </div>
 
-        {/* PANEL KANAN: The Proscenium */}
+        {/* PANEL KANAN: Forged Prose (Dengan Toolbar Formatting) */}
         <div className="flex flex-col flex-1 bg-zinc-900/30">
           <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
-            <span>Forged Prose (Bersambung ke bawah)</span>
+            
+            {/* TOOLBAR FORMATTING */}
+            <div className="flex items-center gap-2">
+              <span>Forged Prose</span>
+              <div className="h-4 w-px bg-zinc-700 mx-2"></div>
+              <button 
+                onClick={() => applyFormatting('bold')} 
+                className="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-emerald-400 transition-colors" 
+                title="Bold (Blok teks terlebih dahulu)"
+              >
+                <Bold className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => applyFormatting('italic')} 
+                className="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-emerald-400 transition-colors" 
+                title="Italic (Blok teks terlebih dahulu)"
+              >
+                <Italic className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* WORD COUNT & COPY/DELETE */}
             <div className="flex items-center gap-4">
               <span className="text-emerald-600 font-mono">{getWordCount(prose)} words</span>
               
@@ -295,7 +365,7 @@ export default function DraftEditor() {
                 onClick={handleClearProse}
                 disabled={!prose}
                 className="flex items-center gap-1.5 px-3 py-1 text-red-400 hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                title="Hapus semua teks"
+                title="Hapus semua teks di panel kanan"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -304,16 +374,19 @@ export default function DraftEditor() {
                 onClick={handleCopy}
                 disabled={!prose}
                 className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-50"
+                title="Copy ke Clipboard"
               >
                 {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                 <span className={isCopied ? "text-emerald-500" : ""}>{isCopied ? "Copied!" : "Copy"}</span>
               </button>
             </div>
           </div>
+
           <textarea
+            ref={proseRef}
             value={prose}
             onChange={(e) => setProse(e.target.value)}
-            placeholder="Hasil AI akan bersambung ke bawah. Kamu bisa memodifikasinya kapan saja..."
+            placeholder="Hasil AI akan bersambung ke bawah. Blok teks lalu tekan ikon I (Italic) atau B (Bold) di atas untuk Inner Monologue."
             className="flex-1 w-full p-6 text-lg leading-relaxed bg-transparent resize-none focus:outline-none text-zinc-100 placeholder:text-zinc-700 selection:bg-emerald-500/30"
           />
         </div>

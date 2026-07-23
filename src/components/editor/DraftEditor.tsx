@@ -422,6 +422,6 @@ export default function DraftEditor() {
             
           </div>
         </div>
-      </div>
-    );
-  }
+        </div>
+  );
+}

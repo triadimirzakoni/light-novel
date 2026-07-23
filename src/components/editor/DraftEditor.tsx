@@ -1,50 +1,50 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { streamProse, runLogicQC, streamRevision } from "@/lib/ai/gemini-client";
 import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2, Italic, Bold, Wand2 } from "lucide-react";
 import { getChaptersDB, saveChapterDB, deleteChapterDB } from "@/app/actions/chapter";
 
+// TIPTAP IMPORTS
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+
 const MOCK_LORE_CONTEXT = `
 === COSMOLOGY & WORLD-BUILDING ===
-1. The Truth: Dunia fisik tidak ada. Semuanya adalah mimpi kolektif dari entitas bernama "The Dreamer". Semua manusia adalah kepingan jiwa The Dreamer.
-2. Reality by Consensus: Hukum fisika bekerja karena miliaran manusia (Sleepers) mempercayainya. Kepercayaan kolektif menciptakan realitas (termasuk Dewa).
-3. Reality Correction: Jika orang biasa melihat sihir/monster, dunia secara otomatis akan mencoba "mengedit" ingatan mereka untuk menjaga agar mimpi tetap stabil.
-4. Realms: 
-   - Consensus Layer: Dunia nyata yang stabil.
-   - The Veil: Dimensi cermin bayangan, sepi, penuh kabut dan monster (Shadeborn).
-   - Echoes: Pocket dimension/Ujian dari sebuah Fragment (contoh: Jembatan Kabut, Isle of Calystria).
-   - The Gazebo: Tempat kumpul rahasia di dalam mimpi (manifestasi Will Fragment).
+1. The Truth: Dunia fisik tidak ada. Semuanya adalah mimpi kolektif dari entitas bernama "The Dreamer".
+2. Reality by Consensus: Hukum fisika bekerja karena miliaran manusia (Sleepers) mempercayainya.
+3. Reality Correction: Jika orang biasa melihat sihir/monster, dunia secara otomatis akan mencoba "mengedit" ingatan mereka.
+4. Realms: Consensus Layer, The Veil, Echoes, The Gazebo.
 
-=== POWER SYSTEM (LUCIDITY & RESONANCE) ===
-- Progression: Sleeper (0%) -> Seeker -> Dreamer -> Fragment-Bound -> Awakened (100%).
-- The Cost (Resonance Loss & Melting): Sihir tidak pakai Mana. Kekuatan dibayar dengan kewarasan. Jika seseorang terlalu memaksakan kehendaknya pada realitas, atau bertindak berlawanan dengan sifat aslinya, tubuh dan kesadarannya akan "Meluruh" (Melting/Dissolving) menjadi transparan dan kembali ke The Dreamer.
-- Loot: Saat Shadeborn mati, kesadaran/traumanya berpindah ke pembunuh (meningkatkan Resonance) atau meninggalkan "Echo Shards".
+=== POWER SYSTEM ===
+- Progression: Sleeper -> Seeker -> Dreamer -> Fragment-Bound -> Awakened.
+- The Cost (Melting): Sihir dibayar dengan kewarasan. Memaksakan kehendak atau OOC membuat tubuh/jiwa "Meluruh" (Dissolving).
+- Loot: Membunuh Shadeborn memberi resonansi atau Echo Shards.
 
-=== CHARACTER PROFILES (PSYCHOLOGY & POWERS) ===
+=== CHARACTER PROFILES ===
 1. JULIAN VANCE
-- Resonance: The Anomalous Hunter / Reality Anchor (Level: Seeker/Dreamer). Kekuatannya misterius, berfungsi secara pasif men-dispel sihir orang lain saat dia terancam. Punya insting bertahan hidup ekstrem.
-- Sifat: Pragmatis, logis, blak-blakan/kasar (blunt), penyendiri. Digeser dari balas dendam menjadi pelindung kelompok.
+- Resonance: The Anomalous Hunter / Reality Anchor. Pasif mendispel sihir saat terancam.
+- Sifat: Pragmatis, logis, blak-blakan, penyendiri. Digeser dari balas dendam menjadi pelindung kelompok.
 
 2. ELARA MOONSONG
-- Resonance: Warden of Memories (Bisa memanipulasi dan menghapus ingatan, termasuk ingatannya sendiri).
-- Sifat: Sangat tertutup (secretive), paranoid, pesimis. Murid dari The Hermit yang secara diam-diam ingin membunuh gurunya.
+- Resonance: Warden of Memories.
+- Sifat: Sangat tertutup, paranoid, pesimis. Murid rahasia The Hermit.
 
 3. SEBASTIAN
-- Resonance: Eternal Wanderer (Bisa menjelajah alam non-fisik/mimpi, kebal suhu ekstrem).
-- Sifat: Kalkulatif, sangat menghindari risiko, bicaranya sarkas dan pelit kata. Yatim piatu Gereja Halora yang sinis. Sering mengucap "blasphemous" sebagai sindiran. Takut pada proses "Melting".
+- Resonance: Eternal Wanderer.
+- Sifat: Kalkulatif, sangat menghindari risiko, bicaranya sarkas dan pelit kata. Yatim piatu Gereja Halora yang sinis. Takut "Melting".
 
 4. LYRA SOLVARIS
-- Resonance: Voicewoven Herald (Mind Weaver - Telepati).
-- Sifat: Putri kerajaan yang naif, kaku, dan polos. Bisu secara fisik (HANYA bisa bicara lewat telepati langsung ke otak orang lain). Terlindungi dari dunia luar tapi pelan-pelan terpapar pikiran gelap orang lain.
+- Resonance: Voicewoven Herald (Telepati).
+- Sifat: Putri naif, polos. Bisu secara fisik.
 
 5. KAEL STERLING
-- Resonance: Swordborne Vessel (Form Shaper - Bisa menciptakan pedang dari objek).
-- Sifat: Ksatria idealis, optimis, loyal pada The Chancellor (Empire). Percaya dia sedang "menyelamatkan dunia" sampai akhirnya melihat kebusukan atasannya.
+- Resonance: Swordborne Vessel (Form Shaper).
+- Sifat: Ksatria idealis, optimis.
 
-=== ENEMIES & ENTITIES ===
-- Shadeborn: Monster perwujudan trauma/mimpi buruk The Dreamer.
-- The 5 Great Powers: The Queen (Authority), The Pope (Faith), The Chancellor (Mind), The Hermit (Isolation), The Prime/Faction Leader (Ego - musuh utama Julian).
+=== ENEMIES ===
+- Shadeborn: Monster perwujudan trauma The Dreamer.
+- 5 Great Powers: The Queen, The Pope, The Chancellor, The Hermit, The Prime.
 `;
 
 type DBChapter = {
@@ -67,13 +67,26 @@ export default function DraftEditor() {
   const [showSidebar, setShowSidebar] = useState(false);
 
   const [isForging, setIsForging] = useState(false);
-  const [isRevising, setIsRevising] = useState(false);
   const [isCheckingQC, setIsCheckingQC] = useState(false);
+  const [isRevising, setIsRevising] = useState(false);
   const [qcResult, setQcResult] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
-
-  const proseRef = useRef<HTMLTextAreaElement>(null);
   const [mounted, setMounted] = useState(false);
+
+  // --- INISIALISASI TIPTAP EDITOR ---
+  const editor = useEditor({
+    extensions: [StarterKit],
+    content: prose,
+    editorProps: {
+      attributes: {
+        // Class untuk membuat HTML terlihat rapi seperti novel
+        class: 'flex-1 w-full p-6 text-lg leading-relaxed bg-transparent focus:outline-none text-zinc-100 h-full overflow-y-auto [&_p]:mb-4 [&_em]:italic [&_strong]:font-bold [&_em]:text-zinc-300',
+      },
+    },
+    onUpdate: ({ editor }) => {
+      setProse(editor.getHTML()); 
+    },
+  });
 
   const loadDatabase = async () => {
     setIsLoadingDB(true);
@@ -88,77 +101,56 @@ export default function DraftEditor() {
   }, []);
 
   // --- HELPER FUNCTIONS ---
-  
-  // Fungsi Cerdas: Membasmi "Enter" berlebih (Lebih dari 2 kali enter akan diubah jadi 2 kali saja)
-  const cleanNewLines = (text: string) => {
-    if (!text) return "";
-    return text
-      .replace(/\r\n/g, '\n') // Standardisasi format enter windows ke umum
-      .replace(/\n{3,}/g, '\n\n') // Jika ada 3 Enter atau lebih, jadikan 2 Enter (1 baris kosong)
-      .trim(); // Hapus enter berlebih di awal dan akhir bab
+  const getWordCount = (htmlText: string) => {
+    const plainText = htmlText.replace(/<[^>]*>?/gm, ''); // Buang tag HTML untuk dihitung
+    return plainText.trim().split(/\s+/).filter((word) => word.length > 0).length;
   };
 
-  const getWordCount = (text: string) => {
-    return text.trim().split(/\s+/).filter((word) => word.length > 0).length;
-  };
-
+  // Fungsi Copy Teks (Bersih dari Tag HTML)
   const handleCopy = async () => {
-  if (!prose) return;
-  const tempDiv = document.createElement("div");
-  tempDiv.innerHTML = prose;
-  await navigator.clipboard.writeText(tempDiv.innerText); // Otomatis merapikan spasi HTML
-  setIsCopied(true);
-  setTimeout(() => setIsCopied(false), 2000);
+    if (!prose) return;
+    const tempDiv = document.createElement("div");
+    tempDiv.innerHTML = prose;
+    await navigator.clipboard.writeText(tempDiv.innerText);
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
   };
 
   const handleClearProse = () => {
     if (confirm("Yakin ingin menghapus semua hasil teks AI di panel kanan?")) {
       setProse("");
+      editor?.commands.setContent(""); 
     }
   };
 
-  // --- FUNGSI FORMATTING (ITALIC & BOLD) ---
-  const applyFormatting = (formatType: 'italic' | 'bold') => {
-    const textarea = proseRef.current;
-    if (!textarea) return;
+  // --- AI FUNCTIONS ---
 
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
+  // 1. FORGE BEAT (Append/Menyambung Cerita ke bawah)
+  const handleForge = async () => {
+    if (!draft.trim()) return;
+    setIsForging(true);
+    setQcResult(null);
+
+    // Tambahkan paragraf kosong di bawah agar teks menyambung rapi
+    let currentStream = prose.trim() ? prose.trim() + "<p></p>" : "";
+    editor?.commands.setContent(currentStream);
+
+    await streamProse(draft, MOCK_LORE_CONTEXT, prose, (chunk) => {
+      currentStream += chunk;
+      editor?.commands.setContent(currentStream);
+      setProse(currentStream);
+    });
     
-    if (start === end) return;
-
-    const selectedText = prose.substring(start, end);
-    const before = prose.substring(0, start);
-    const after = prose.substring(end, prose.length);
-
-    let wrappedText = '';
-    let cursorOffset = 0;
-
-    if (formatType === 'italic') {
-      wrappedText = `*${selectedText}*`;
-      cursorOffset = 1; 
-    } else if (formatType === 'bold') {
-      wrappedText = `**${selectedText}**`;
-      cursorOffset = 2; 
-    }
-
-    setProse(before + wrappedText + after);
-
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(start + cursorOffset, end + cursorOffset);
-    }, 0);
+    setIsForging(false);
+    setDraft(""); // Draf kiri dikosongkan siap untuk Beat selanjutnya
   };
 
-  // --- AI Functions ---
+  // 2. EXPERT POLISH (Revisi Pacing/Diksi)
   const handleRevise = async () => {
     if (!prose.trim()) return;
     setIsRevising(true);
     
-    // Simpan teks saat ini untuk dikirim ke AI
     const proseToRevise = prose; 
-    
-    // Kosongkan layar panel kanan untuk menyambut teks hasil revisi
     setProse(""); 
     editor?.commands.setContent("");
     
@@ -171,23 +163,8 @@ export default function DraftEditor() {
     
     setIsRevising(false);
   };
-  const handleForge = async () => {
-    if (!draft.trim()) return;
-    setIsForging(true);
-    setQcResult(null);
 
-    if (prose.trim()) {
-      setProse((prev) => prev.trim() + "\n\n");
-    }
-
-    await streamProse(draft, MOCK_LORE_CONTEXT, prose, (chunk) => {
-      setProse((prev) => prev + chunk);
-    });
-    
-    setIsForging(false);
-    setDraft(""); 
-  };
-
+  // 3. QC LOGIKA
   const handleLoreQC = async () => {
     if (!draft.trim()) return;
     setIsCheckingQC(true);
@@ -196,23 +173,18 @@ export default function DraftEditor() {
     setIsCheckingQC(false);
   };
 
-  // --- Database Functions ---
+  // --- DATABASE FUNCTIONS ---
   const handleSaveToDB = async () => {
     setIsSaving(true);
-    
-    // Auto-Format: Rapikan teks sebelum masuk database agar tidak ada enter bolong-bolong
-    const cleanedProse = cleanNewLines(prose);
-    setProse(cleanedProse); // Update teks di layar agar rapi seketika
-
     const response = await saveChapterDB({
       id: chapterId,
       title: title || "Untitled Chapter",
       draftContent: draft, 
-      proseContent: cleanedProse,
+      proseContent: prose, // Simpan format HTML
     });
     
     if (response.success) {
-      alert(`Bab "${title}" berhasil disimpan ke Cloud Database! ☁️`);
+      alert(`Bab "${title}" berhasil disimpan ke Cloud! ☁️`);
       await loadDatabase(); 
     } else {
       alert("Gagal menyimpan bab. Cek koneksi internet.");
@@ -224,11 +196,8 @@ export default function DraftEditor() {
     setChapterId(chapter.id);
     setTitle(chapter.title);
     setDraft(chapter.draftContent);
-    
-    // Auto-Format: Rapikan teks saat ditarik dari database untuk berjaga-jaga
-    const cleanedProse = cleanNewLines(chapter.proseContent);
-    setProse(cleanedProse);
-    
+    setProse(chapter.proseContent);
+    editor?.commands.setContent(chapter.proseContent); // Tampilkan HTML di TipTap
     setQcResult(null);
   };
 
@@ -237,6 +206,7 @@ export default function DraftEditor() {
     setTitle("New Chapter");
     setDraft("");
     setProse("");
+    editor?.commands.setContent("");
     setQcResult(null);
   };
 
@@ -249,10 +219,11 @@ export default function DraftEditor() {
     }
   };
 
-  if (!mounted) return null;
+  if (!mounted || !editor) return null;
 
   return (
     <div className="flex flex-col h-screen bg-zinc-950 text-zinc-300 font-sans">
+      {/* HEADER / TOOLBAR */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-900/50">
         <div className="flex items-center gap-4">
           <button onClick={() => setShowSidebar(!showSidebar)} className="p-2 border rounded border-zinc-700 hover:bg-zinc-800 transition-colors relative">
@@ -283,13 +254,14 @@ export default function DraftEditor() {
             {isCheckingQC ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4 text-amber-500" />}
             QC Logika
           </button>
-          <button onClick={handleForge} disabled={isForging || !draft} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-black transition-all rounded-md bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+          <button onClick={handleForge} disabled={isForging || !draft || isRevising} className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-black transition-all rounded-md bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
             {isForging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             Forge Beat
           </button>
         </div>
       </header>
 
+      {/* QC BANNER */}
       {qcResult && (
         <div className={`px-6 py-3 text-sm font-medium border-b ${qcResult.includes("LORE ACCURATE") ? "bg-emerald-950/50 text-emerald-400 border-emerald-900" : "bg-amber-950/50 text-amber-400 border-amber-900"}`}>
           <span className="font-bold">Lorekeeper: </span>
@@ -297,7 +269,10 @@ export default function DraftEditor() {
         </div>
       )}
 
+      {/* TAMPILAN UTAMA (Editor + Sidebar) */}
       <div className="flex flex-1 overflow-hidden relative">
+        
+        {/* SIDEBAR DB CLOUD */}
         {showSidebar && (
           <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col absolute z-10 h-full shadow-2xl transition-all">
             <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/50">
@@ -338,6 +313,7 @@ export default function DraftEditor() {
           </div>
         )}
 
+        {/* PANEL KIRI: Director's Draft */}
         <div className={`flex flex-col flex-1 border-r border-zinc-800 bg-zinc-950 transition-all ${showSidebar ? 'ml-72' : 'ml-0'}`}>
           <div className="px-6 py-2 text-xs font-semibold tracking-wider uppercase border-b border-zinc-800 text-zinc-500 flex justify-between items-center bg-zinc-900/30">
             <span>Director's Draft</span>
@@ -351,77 +327,70 @@ export default function DraftEditor() {
           />
         </div>
 
+        {/* PANEL KANAN: TipTap Rich Text Editor */}
         <div className="flex flex-col flex-1 bg-zinc-900/30">
           <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
             
-            {/* PANEL KANAN: TipTap Rich Text Editor & Toolbar */}
-          <div className="flex flex-col flex-1 bg-zinc-900/30">
-            <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
+            {/* TIPTAP TOOLBAR & EXPERT POLISH */}
+            <div className="flex items-center gap-2">
+              <span>Forged Prose</span>
+              <div className="h-4 w-px bg-zinc-700 mx-2"></div>
               
-              {/* TIPTAP TOOLBAR & EXPERT POLISH */}
-              <div className="flex items-center gap-2">
-                <span>Forged Prose</span>
-                <div className="h-4 w-px bg-zinc-700 mx-2"></div>
-                
-                <button 
-                  onClick={() => editor?.chain().focus().toggleBold().run()} 
-                  className={`p-1 rounded transition-colors ${editor?.isActive('bold') ? 'bg-zinc-700 text-emerald-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-emerald-400'}`}
-                  title="Bold (Ctrl+B)"
-                >
-                  <Bold className="w-4 h-4" />
-                </button>
-                
-                <button 
-                  onClick={() => editor?.chain().focus().toggleItalic().run()} 
-                  className={`p-1 rounded transition-colors ${editor?.isActive('italic') ? 'bg-zinc-700 text-emerald-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-emerald-400'}`}
-                  title="Italic (Ctrl+I)"
-                >
-                  <Italic className="w-4 h-4" />
-                </button>
+              <button 
+                onClick={() => editor.chain().focus().toggleBold().run()} 
+                className={`p-1 rounded transition-colors ${editor.isActive('bold') ? 'bg-zinc-700 text-emerald-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-emerald-400'}`}
+                title="Bold (Ctrl+B)"
+              >
+                <Bold className="w-4 h-4" />
+              </button>
+              
+              <button 
+                onClick={() => editor.chain().focus().toggleItalic().run()} 
+                className={`p-1 rounded transition-colors ${editor.isActive('italic') ? 'bg-zinc-700 text-emerald-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-emerald-400'}`}
+                title="Italic (Ctrl+I)"
+              >
+                <Italic className="w-4 h-4" />
+              </button>
 
-                {/* TOMBOL REVISI AHLI BARU */}
-                <div className="h-4 w-px bg-zinc-700 mx-2"></div>
-                <button 
-                  onClick={handleRevise} 
-                  disabled={!prose || isRevising || isForging}
-                  className="flex items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
-                  title="Kirim naskah ini ke Editor AI untuk diperbaiki diksi dan pacing-nya"
-                >
-                  {isRevising ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
-                  {isRevising ? "Polishing..." : "Expert Polish"}
-                </button>
-              </div>
-
-              {/* WORD COUNT & COPY/DELETE */}
-              <div className="flex items-center gap-4">
-                <span className="text-emerald-600 font-mono">{getWordCount(prose)} words</span>
-                
-                <button 
-                  onClick={handleClearProse}
-                  disabled={!prose}
-                  className="flex items-center gap-1.5 px-3 py-1 text-red-400 hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                  title="Hapus semua teks di panel kanan"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-
-                <button 
-                  onClick={handleCopy}
-                  disabled={!prose}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-50"
-                  title="Copy ke Clipboard"
-                >
-                  {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span className={isCopied ? "text-emerald-500" : ""}>{isCopied ? "Copied!" : "Copy"}</span>
-                </button>
-              </div>
+              <div className="h-4 w-px bg-zinc-700 mx-2"></div>
+              <button 
+                onClick={handleRevise} 
+                disabled={!prose || isRevising || isForging}
+                className="flex items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+                title="Revisi seluruh teks panel kanan"
+              >
+                {isRevising ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                {isRevising ? "Polishing..." : "Expert Polish"}
+              </button>
             </div>
 
-            {/* KANVAS TIPTAP: Pengganti Textarea Lama yang Bisa Italic Beneran */}
-            <EditorContent editor={editor} className="flex-1 overflow-hidden flex flex-col" />
-            
+            {/* WORD COUNT & COPY/DELETE */}
+            <div className="flex items-center gap-4">
+              <span className="text-emerald-600 font-mono">{getWordCount(prose)} words</span>
+              
+              <button 
+                onClick={handleClearProse}
+                disabled={!prose}
+                className="flex items-center gap-1.5 px-3 py-1 text-red-400 hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+
+              <button 
+                onClick={handleCopy}
+                disabled={!prose}
+                className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-50"
+              >
+                {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                <span className={isCopied ? "text-emerald-500" : ""}>{isCopied ? "Copied!" : "Copy"}</span>
+              </button>
+            </div>
           </div>
+
+          <EditorContent editor={editor} className="flex-1 overflow-hidden flex flex-col" />
+          
         </div>
-        </div>
+      </div>
+    </div>
   );
 }

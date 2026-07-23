@@ -1,6 +1,6 @@
 // src/lib/ai/gemini-client.ts
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { BASE_SYSTEM_PROMPT, QC_SYSTEM_PROMPT } from "./prompts";
+import { BASE_SYSTEM_PROMPT, QC_SYSTEM_PROMPT,REVISION_SYSTEM_PROMPT } from "./prompts";
 
 const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
 if (!apiKey) {

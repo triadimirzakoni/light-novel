@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { streamProse, runLogicQC } from "@/lib/ai/gemini-client";
-import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2, Italic, Bold } from "lucide-react";
+import { streamProse, runLogicQC, streamRevision } from "@/lib/ai/gemini-client";
+import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2, Italic, Bold, Wand2 } from "lucide-react";
 import { getChaptersDB, saveChapterDB, deleteChapterDB } from "@/app/actions/chapter";
 
 const MOCK_LORE_CONTEXT = `
@@ -67,6 +67,7 @@ export default function DraftEditor() {
   const [showSidebar, setShowSidebar] = useState(false);
 
   const [isForging, setIsForging] = useState(false);
+  const [isRevising, setIsRevising] = useState(false);
   const [isCheckingQC, setIsCheckingQC] = useState(false);
   const [qcResult, setQcResult] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
@@ -102,11 +103,12 @@ export default function DraftEditor() {
   };
 
   const handleCopy = async () => {
-    if (!prose) return;
-    const cleanedProse = cleanNewLines(prose); // Rapikan sebelum di copy
-    await navigator.clipboard.writeText(cleanedProse);
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
+  if (!prose) return;
+  const tempDiv = document.createElement("div");
+  tempDiv.innerHTML = prose;
+  await navigator.clipboard.writeText(tempDiv.innerText); // Otomatis merapikan spasi HTML
+  setIsCopied(true);
+  setTimeout(() => setIsCopied(false), 2000);
   };
 
   const handleClearProse = () => {
@@ -149,6 +151,26 @@ export default function DraftEditor() {
   };
 
   // --- AI Functions ---
+  const handleRevise = async () => {
+    if (!prose.trim()) return;
+    setIsRevising(true);
+    
+    // Simpan teks saat ini untuk dikirim ke AI
+    const proseToRevise = prose; 
+    
+    // Kosongkan layar panel kanan untuk menyambut teks hasil revisi
+    setProse(""); 
+    editor?.commands.setContent("");
+    
+    let currentStream = "";
+    await streamRevision(proseToRevise, MOCK_LORE_CONTEXT, (chunk) => {
+      currentStream += chunk;
+      editor?.commands.setContent(currentStream);
+      setProse(currentStream);
+    });
+    
+    setIsRevising(false);
+  };
   const handleForge = async () => {
     if (!draft.trim()) return;
     setIsForging(true);
@@ -332,56 +354,74 @@ export default function DraftEditor() {
         <div className="flex flex-col flex-1 bg-zinc-900/30">
           <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
             
-            <div className="flex items-center gap-2">
-              <span>Forged Prose</span>
-              <div className="h-4 w-px bg-zinc-700 mx-2"></div>
-              <button 
-                onClick={() => applyFormatting('bold')} 
-                className="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-emerald-400 transition-colors" 
-                title="Bold (Blok teks terlebih dahulu)"
-              >
-                <Bold className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={() => applyFormatting('italic')} 
-                className="p-1 hover:bg-zinc-700 rounded text-zinc-400 hover:text-emerald-400 transition-colors" 
-                title="Italic (Blok teks terlebih dahulu)"
-              >
-                <Italic className="w-4 h-4" />
-              </button>
+            {/* PANEL KANAN: TipTap Rich Text Editor & Toolbar */}
+          <div className="flex flex-col flex-1 bg-zinc-900/30">
+            <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
+              
+              {/* TIPTAP TOOLBAR & EXPERT POLISH */}
+              <div className="flex items-center gap-2">
+                <span>Forged Prose</span>
+                <div className="h-4 w-px bg-zinc-700 mx-2"></div>
+                
+                <button 
+                  onClick={() => editor?.chain().focus().toggleBold().run()} 
+                  className={`p-1 rounded transition-colors ${editor?.isActive('bold') ? 'bg-zinc-700 text-emerald-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-emerald-400'}`}
+                  title="Bold (Ctrl+B)"
+                >
+                  <Bold className="w-4 h-4" />
+                </button>
+                
+                <button 
+                  onClick={() => editor?.chain().focus().toggleItalic().run()} 
+                  className={`p-1 rounded transition-colors ${editor?.isActive('italic') ? 'bg-zinc-700 text-emerald-400' : 'text-zinc-400 hover:bg-zinc-800 hover:text-emerald-400'}`}
+                  title="Italic (Ctrl+I)"
+                >
+                  <Italic className="w-4 h-4" />
+                </button>
+
+                {/* TOMBOL REVISI AHLI BARU */}
+                <div className="h-4 w-px bg-zinc-700 mx-2"></div>
+                <button 
+                  onClick={handleRevise} 
+                  disabled={!prose || isRevising || isForging}
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs font-semibold rounded bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors disabled:opacity-50"
+                  title="Kirim naskah ini ke Editor AI untuk diperbaiki diksi dan pacing-nya"
+                >
+                  {isRevising ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                  {isRevising ? "Polishing..." : "Expert Polish"}
+                </button>
+              </div>
+
+              {/* WORD COUNT & COPY/DELETE */}
+              <div className="flex items-center gap-4">
+                <span className="text-emerald-600 font-mono">{getWordCount(prose)} words</span>
+                
+                <button 
+                  onClick={handleClearProse}
+                  disabled={!prose}
+                  className="flex items-center gap-1.5 px-3 py-1 text-red-400 hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
+                  title="Hapus semua teks di panel kanan"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+
+                <button 
+                  onClick={handleCopy}
+                  disabled={!prose}
+                  className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-50"
+                  title="Copy ke Clipboard"
+                >
+                  {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span className={isCopied ? "text-emerald-500" : ""}>{isCopied ? "Copied!" : "Copy"}</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <span className="text-emerald-600 font-mono">{getWordCount(prose)} words</span>
-              <button 
-                onClick={handleClearProse}
-                disabled={!prose}
-                className="flex items-center gap-1.5 px-3 py-1 text-red-400 hover:bg-red-950/30 rounded transition-colors disabled:opacity-50"
-                title="Hapus semua teks di panel kanan"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-              <button 
-                onClick={handleCopy}
-                disabled={!prose}
-                className="flex items-center gap-1.5 px-3 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-50"
-                title="Copy ke Clipboard"
-              >
-                {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                <span className={isCopied ? "text-emerald-500" : ""}>{isCopied ? "Copied!" : "Copy"}</span>
-              </button>
-            </div>
+            {/* KANVAS TIPTAP: Pengganti Textarea Lama yang Bisa Italic Beneran */}
+            <EditorContent editor={editor} className="flex-1 overflow-hidden flex flex-col" />
+            
           </div>
-
-          <textarea
-            ref={proseRef}
-            value={prose}
-            onChange={(e) => setProse(e.target.value)}
-            placeholder="Hasil AI akan bersambung ke bawah. Blok teks lalu tekan ikon I (Italic) atau B (Bold) di atas untuk Inner Monologue."
-            className="flex-1 w-full p-6 text-lg leading-relaxed bg-transparent resize-none focus:outline-none text-zinc-100 placeholder:text-zinc-700 selection:bg-emerald-500/30"
-          />
         </div>
       </div>
-    </div>
-  );
-}
+    );
+  }

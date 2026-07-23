@@ -64,3 +64,30 @@ export async function runLogicQC(draft: string, loreContext: string): Promise<st
     return "Error: Lorekeeper agent is currently sleeping.";
   }
 }
+// Fungsi Baru untuk Fitur Revisi Ahli
+export async function streamRevision(
+  proseToRevise: string, 
+  loreContext: string, 
+  onChunk: (text: string) => void
+) {
+  try {
+    const model = genAI.getGenerativeModel({
+      model: "gemini-3.5-flash", // Tetap pakai Flash karena kuat untuk text processing panjang
+      systemInstruction: REVISION_SYSTEM_PROMPT + "\n" + loreContext,
+      generationConfig: {
+        temperature: 0.6, // Suhu diturunkan sedikit agar AI lebih fokus mengedit daripada mengkhayal
+        topP: 0.9,
+      },
+    });
+
+    const result = await model.generateContentStream(`[PROSE TO REVISE AND POLISH]:\n${proseToRevise}`);
+    
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      onChunk(chunkText);
+    }
+  } catch (error) {
+    console.error("Gagal melakukan Revisi:", error);
+    onChunk("\n\n[ERROR: Gagal menghubungi The Editors Panel. Cek koneksi atau limit.]");
+  }
+}

@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { streamProse, runLogicQC, streamRevision } from "@/lib/ai/gemini-client";
 import { Sparkles, ShieldAlert, Loader2, BookOpen, Save, List, Plus, Copy, Check, Trash2, Italic, Bold, Wand2 } from "lucide-react";
 import { getChaptersDB, saveChapterDB, deleteChapterDB } from "@/app/actions/chapter";
 
-// TIPTAP IMPORTS
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 
@@ -69,6 +68,11 @@ export default function DraftEditor() {
   const [isLoadingDB, setIsLoadingDB] = useState(true);
   const [showSidebar, setShowSidebar] = useState(false);
 
+  // --- AUTOSAVE STATES ---
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const isInitialLoad = useRef(true); // Ref agar load awal dari DB tidak dianggap "perubahan"
+
   const [isForging, setIsForging] = useState(false);
   const [isRevising, setIsRevising] = useState(false);
   const [isCheckingQC, setIsCheckingQC] = useState(false);
@@ -88,6 +92,7 @@ export default function DraftEditor() {
     },
     onUpdate: ({ editor }) => {
       setProse(editor.getHTML()); 
+      if (!isInitialLoad.current) setHasUnsavedChanges(true); // Tandai ada perubahan
     },
   });
 
@@ -101,7 +106,31 @@ export default function DraftEditor() {
   useEffect(() => {
     setMounted(true);
     loadDatabase();
+    // Beri jeda sebentar agar load pertama tidak men-trigger autosave
+    setTimeout(() => { isInitialLoad.current = false; }, 500);
   }, []);
+
+  // --- EFEK AUTOSAVE (Memicu save setelah 5 detik diam) ---
+  useEffect(() => {
+    if (!hasUnsavedChanges || isAutoSaving || isSaving || isInitialLoad.current) return;
+
+    const timer = setTimeout(() => {
+      handleSaveToDB(true); // true = silent save
+    }, 5000); // 5 detik
+
+    return () => clearTimeout(timer);
+  }, [draft, prose, title, hasUnsavedChanges]);
+
+  // --- CHANGE HANDLERS (Agar mendeteksi ketikan User) ---
+  const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTitle(e.target.value);
+    if (!isInitialLoad.current) setHasUnsavedChanges(true);
+  };
+
+  const handleDraftChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setDraft(e.target.value);
+    if (!isInitialLoad.current) setHasUnsavedChanges(true);
+  };
 
   // --- HELPER FUNCTIONS ---
   const getWordCount = (htmlText: string) => {
@@ -123,6 +152,7 @@ export default function DraftEditor() {
     if (confirm("Yakin ingin menghapus semua hasil teks AI di panel kanan?")) {
       setProse("");
       editor?.commands.setContent("");
+      setHasUnsavedChanges(true);
     }
   };
 
@@ -143,6 +173,7 @@ export default function DraftEditor() {
     
     setIsForging(false);
     setDraft(""); 
+    setHasUnsavedChanges(true); // Tandai hasil AI sebagai perubahan baru
   };
 
   const handleRevise = async () => {
@@ -161,6 +192,7 @@ export default function DraftEditor() {
     });
     
     setIsRevising(false);
+    setHasUnsavedChanges(true);
   };
 
   const handleLoreQC = async () => {
@@ -172,8 +204,12 @@ export default function DraftEditor() {
   };
 
   // --- DATABASE FUNCTIONS ---
-  const handleSaveToDB = async () => {
-    setIsSaving(true);
+  
+  // Parameter silent = true untuk Autosave agar tidak muncul alert popup
+  const handleSaveToDB = async (silent = false) => {
+    if (silent) setIsAutoSaving(true);
+    else setIsSaving(true);
+
     const response = await saveChapterDB({
       id: chapterId,
       title: title || "Untitled Chapter",
@@ -182,35 +218,63 @@ export default function DraftEditor() {
     });
     
     if (response.success) {
-      alert(`Bab "${title}" berhasil disimpan ke Cloud Database! ☁️`);
-      await loadDatabase(); 
+      setHasUnsavedChanges(false); // Reset status perubahan
+      // Panggil database secara diam-diam untuk update daftar Sidebar
+      const data = await getChaptersDB();
+      setChapters(data);
+
+      if (!silent) alert(`Bab "${title}" berhasil disimpan ke Cloud! ☁️`);
     } else {
-      alert("Gagal menyimpan bab. Cek koneksi internet.");
+      if (!silent) alert("Gagal menyimpan bab. Cek koneksi internet.");
     }
-    setIsSaving(false);
+    
+    if (silent) setIsAutoSaving(false);
+    else setIsSaving(false);
   };
 
-  const handleLoadChapter = (chapter: DBChapter) => {
+  const handleLoadChapter = async (chapter: DBChapter) => {
+    // 🛡️ PERLINDUNGAN: Simpan dulu bab saat ini sebelum buka yang baru!
+    if (hasUnsavedChanges) {
+      await handleSaveToDB(true); 
+    }
+
+    isInitialLoad.current = true; // Kunci agar load DB tidak memicu autosave
     setChapterId(chapter.id);
     setTitle(chapter.title);
     setDraft(chapter.draftContent);
     setProse(chapter.proseContent);
     editor?.commands.setContent(chapter.proseContent);
     setQcResult(null);
+
+    setTimeout(() => {
+      setHasUnsavedChanges(false);
+      isInitialLoad.current = false;
+    }, 200);
   };
 
-  const createNewChapter = () => {
+  const createNewChapter = async () => {
+    // 🛡️ PERLINDUNGAN: Simpan dulu sebelum bikin bab baru!
+    if (hasUnsavedChanges) {
+      await handleSaveToDB(true); 
+    }
+
+    isInitialLoad.current = true;
     setChapterId(crypto.randomUUID());
     setTitle("New Chapter");
     setDraft("");
     setProse("");
     editor?.commands.setContent("");
     setQcResult(null);
+
+    setTimeout(() => {
+      setHasUnsavedChanges(false);
+      isInitialLoad.current = false;
+    }, 200);
   };
 
-  const handleDeleteChapter = async (e: React.MouseEvent, id: string, title: string) => {
+  const handleDeleteChapter = async (e: React.MouseEvent, id: string, deletedTitle: string) => {
     e.stopPropagation(); 
-    if (confirm(`Yakin ingin menghapus bab "${title}" selamanya dari Database?`)) {
+    if (confirm(`Yakin ingin menghapus bab "${deletedTitle}" selamanya dari Database?`)) {
       await deleteChapterDB(id);
       await loadDatabase();
       if (chapterId === id) createNewChapter();
@@ -238,16 +302,27 @@ export default function DraftEditor() {
             <input 
               type="text" 
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={handleTitleChange}
               className="bg-transparent text-lg font-bold text-zinc-100 uppercase tracking-widest focus:outline-none border-b border-dashed border-zinc-700 focus:border-emerald-500 w-80"
             />
           </div>
         </div>
         
-        <div className="flex gap-3">
-          <button onClick={handleSaveToDB} disabled={isSaving} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 text-emerald-400 hover:text-emerald-300 disabled:opacity-50">
+        <div className="flex gap-3 items-center">
+          {/* VISUAL INDICATOR AUTOSAVE */}
+          <div className="mr-2 text-right">
+            {isAutoSaving ? (
+              <span className="text-xs text-zinc-500 animate-pulse">Autosaving...</span>
+            ) : hasUnsavedChanges ? (
+              <span className="text-xs text-amber-500/70 italic">Unsaved changes</span>
+            ) : (
+              <span className="text-xs text-emerald-500/70">Saved to Cloud</span>
+            )}
+          </div>
+
+          <button onClick={() => handleSaveToDB(false)} disabled={isSaving || !hasUnsavedChanges} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 text-emerald-400 hover:text-emerald-300 disabled:opacity-30">
             {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
-            {isSaving ? "Saving..." : "Save Chapter"}
+            {isSaving ? "Saving..." : "Save"}
           </button>
           <button onClick={handleLoreQC} disabled={isCheckingQC || !draft} className="flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors border rounded-md border-zinc-700 hover:bg-zinc-800 disabled:opacity-50">
             {isCheckingQC ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldAlert className="w-4 h-4 text-amber-500" />}
@@ -271,7 +346,7 @@ export default function DraftEditor() {
       {/* TAMPILAN UTAMA */}
       <div className="flex flex-1 overflow-hidden relative">
         
-        {/* SIDEBAR */}
+        {/* SIDEBAR DB CLOUD */}
         {showSidebar && (
           <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col absolute z-10 h-full shadow-2xl transition-all">
             <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/50">
@@ -320,13 +395,13 @@ export default function DraftEditor() {
           </div>
           <textarea
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={handleDraftChange}
             placeholder="Tulis Beat-mu di sini..."
             className="flex-1 w-full p-6 text-lg leading-relaxed bg-transparent resize-none focus:outline-none text-zinc-300 placeholder:text-zinc-700"
           />
         </div>
 
-        {/* KOTAK KANAN (TipTap Editor) */}
+        {/* KOTAK KANAN */}
         <div className="flex flex-col flex-1 bg-zinc-900/30">
           <div className="px-6 py-2 text-xs font-semibold tracking-wider text-emerald-500 uppercase border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
             
